@@ -186,7 +186,7 @@ function main() {
     echo "* setting up host hwsim0 interface"
     sudo ip link set hwsim0 up
 
-    sudo /root/./routing.sh -a 192.168.16.0/24 ens3
+    sudo ./routing.sh -a 192.168.16.0/24 ens3
   fi
 
   _add_gw
