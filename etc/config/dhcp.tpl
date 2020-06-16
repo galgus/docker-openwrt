@@ -13,6 +13,7 @@ config dnsmasq
         list server "${UPSTREAM_DNS_SERVER}"
 
 config dhcp 'lan'
+        option ignore       '1'
         option interface 'lan'
         option start '100'
         option limit '150'
