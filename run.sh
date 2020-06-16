@@ -143,15 +143,21 @@ function _cleanup() {
 
   if [ ${CONFIG_FILE} == "openwrt.conf" ]; then
     echo "* removing host macvlan interface"
+    sudo rmmod mac80211_hwsim
     sudo ip link del dev macvlan0
-    docker network rm br-lan
-    docker network rm br-wan
+    docker network rm ${LAN_NAME}
+    docker network rm ${WAN_NAME}
     sudo /root/./routing.sh -d
   fi
   echo -ne "* finished"
 }
 
 function main() {
+
+  if [ ${CONFIG_FILE} == "openwrt.conf" ]; then
+    sudo modprobe mac80211_hwsim radios=${N_HWSIM_RADIOS}
+  fi
+
   test -z $WIFI_IFACE && _usage
   test -z $WIFI_IFACE_1 && _usage
   cd "${SCRIPT_DIR}"
@@ -199,4 +205,3 @@ function main() {
 main
 trap "_cleanup" EXIT
 tail --pid=$pid -f /dev/null
-
