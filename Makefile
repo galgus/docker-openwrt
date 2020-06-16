@@ -1,6 +1,6 @@
 .PHONY: build build-rpi run clean install uninstall
 
-include openwrt.conf
+include ${CONFIG_FILE}
 export
 
 build:
@@ -15,7 +15,7 @@ build-rpi:
 	./build-rpi.sh ${RPI_SOURCE_IMG}
 
 run:
-	./run.sh
+	./run.sh ${CONFIG_DIR}
 
 clean:
 	docker rm ${CONTAINER} || true

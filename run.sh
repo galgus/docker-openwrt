@@ -1,15 +1,16 @@
 #!/bin/bash
-# set -x 
+# set -x
 
 function _usage() {
   echo "Could not find config file."
   echo "Usage: $0 [/path/to/openwrt.conf]"
   exit 1
 }
+
 SCRIPT_DIR=$(cd $(dirname $0) && pwd )
-DEFAULT_CONFIG_FILE=$SCRIPT_DIR/openwrt.conf
-CONFIG_FILE=${1:-$DEFAULT_CONFIG_FILE}
-source $CONFIG_FILE 2>/dev/null || { _usage; exit 1; }
+DEFAULT_CONFIG_FILE=$SCRIPT_DIR/$CONFIG_FILE
+CONFIG_PATH_FILE=${1:-$DEFAULT_CONFIG_FILE}
+source $CONFIG_PATH_FILE 2>/dev/null || { _usage; exit 1; }
 
 # Funcion para desactivar NetworkManager en las interfaces Radio.
 function _nmcli() {
@@ -47,7 +48,7 @@ function _get_phy_from_dev() {
 function _gen_config() {
   echo "* generating network config"
   set -a
-  source $CONFIG_FILE
+  source $CONFIG_PATH_FILE
   _get_phy_from_dev
   for file in etc/config/*.tpl; do
     envsubst <${file} >${file%.tpl}
@@ -74,12 +75,15 @@ function _init_network() {
 
 function _create_or_start_container() {
   docker inspect $BUILD_TAG >/dev/null 2>&1 || { echo "no image '$BUILD_TAG' found, did you forget to run 'make build'?"; exit 1; }
-  
+
   if docker inspect $CONTAINER >/dev/null 2>&1; then
     echo "* starting container '$CONTAINER'"
     docker start $CONTAINER
   else
-    _init_network
+    if [ ${CONFIG_FILE} == "openwrt.conf" ]; then
+        _init_network
+    fi
+
     echo "* creating container $CONTAINER"
     docker create \
       --network $LAN_NAME \
@@ -124,7 +128,6 @@ function _reload_fw() {
 }
 
 function _add_gw() {
-    #ip r a default via 192.168.16.215
   echo "* Adding default gateway to container"
   docker exec -i $CONTAINER sh -c '
         uci set network.lan.gateway=192.168.16.215 && uci commit && /etc/init.d/network restart
@@ -137,11 +140,14 @@ function _cleanup() {
   docker stop $CONTAINER >/dev/null
   echo "* cleaning up netns symlink"
   sudo rm -rf /var/run/netns/$CONTAINER
-  echo "* removing host macvlan interface"
-  sudo ip link del dev macvlan0
-  docker network rm openwrt-lan
-  docker network rm openwrt-wan
-  sudo /root/./routing.sh -d
+
+  if [ ${CONFIG_FILE} == "openwrt.conf" ]; then
+    echo "* removing host macvlan interface"
+    sudo ip link del dev macvlan0
+    docker network rm br-lan
+    docker network rm br-wan
+    sudo /root/./routing.sh -d
+  fi
   echo -ne "* finished"
 }
 
@@ -167,22 +173,24 @@ function main() {
   _set_hairpin $WIFI_IFACE
   _set_hairpin $WIFI_IFACE_1
 
-  echo "* setting up host macvlan interface"
-  sudo ip link add macvlan0 link $LAN_PARENT type macvlan mode bridge
-  sudo ip link set macvlan0 up
-  sudo ip route add $LAN_SUBNET dev macvlan0
+  if [ ${CONFIG_FILE} == "openwrt.conf" ]; then
+    echo "* setting up host macvlan interface"
+    sudo ip link add macvlan0 link $LAN_PARENT type macvlan mode bridge
+    sudo ip link set macvlan0 up
+    sudo ip route add $LAN_SUBNET dev macvlan0
 
-  #echo "* getting address via DHCP"
-  sudo ip addr add 192.168.16.215/24 dev macvlan0
-  #sudo dhcpcd -q macvlan0
+    #echo "* getting address via DHCP"
+    sudo ip addr add 192.168.16.215/24 dev macvlan0
+    #sudo dhcpcd -q macvlan0
 
-  echo "* setting up host hwsim0 interface"
-  sudo ip link set hwsim0 up
+    echo "* setting up host hwsim0 interface"
+    sudo ip link set hwsim0 up
+
+    sudo /root/./routing.sh -a 192.168.16.0/24 ens3
+  fi
 
   _add_gw
   #_reload_fw
-
-  sudo /root/./routing.sh -a 192.168.16.0/24 ens3
 
   echo "* ready"
 
@@ -191,3 +199,4 @@ function main() {
 main
 trap "_cleanup" EXIT
 tail --pid=$pid -f /dev/null
+
